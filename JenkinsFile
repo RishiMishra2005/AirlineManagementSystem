@@ -13,18 +13,10 @@ pipeline {
 			}
 		}
 	
-		stage('Build') {
+		stage('Build and test') {
 	            steps {
 	                bat """
 	                docker run -v "%CD%":/workspace maven:3.9.9-eclipse-temurin-21 /bin/sh -c "cd /workspace && mvn clean package"
-	                """
-	            }
-	        }
-
-	        stage('Test') {
-	            steps {
-	                bat """
-	                docker run -v "%CD%":/workspace maven:3.9.9-eclipse-temurin-21 /bin/sh -c "cd /workspace && mvn test"
 	                """
 	            }
 	        }
@@ -32,10 +24,10 @@ pipeline {
 	    	stage('Copy JAR to EC2') {
 			steps {
 		  		withCredentials([file(credentialsId: 'ec2-key', variable: 'EC2_KEY')]) {
-			    	sh '''
-			      	chmod 400 ${EC2_KEY}
-			        scp -o StrictHostKeyChecking=no -i ${EC2_KEY} ${JAR_NAME} ${EC2_HOST}:${REMOTE_PATH}
-			      	'''
+			    	bat """
+				echo Copying JAR to EC2...
+				scp -o StrictHostKeyChecking=no -i "%EC2_KEY%" %JAR_NAME% %EC2_HOST%:%REMOTE_PATH%
+				"""
 			    	}
 		  	}
 		}
