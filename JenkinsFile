@@ -1,74 +1,44 @@
 pipeline {
 	agent any
 	environment {
-	    IMAGE_NAME = 'eclipse-temurin:21-jdk'
-	    EC2_USER = 'ec2-user'                // Amazon Linux default user
-	    EC2_IP = '65.1.248.245'        // Replace this
-	    PEM_KEY = 'C:/Users/ADMIN/Downloads/rishi.pem'    // Replace this (local path to your EC2 private key)
+		EC2_HOST = 'ec2-user@65.1.248.245'
+		JAR_NAME = 'target/airline-0.0.1-SNAPSHOT.jar'
+		REMOTE_PATH = '/home/ec2-user/app.jar'
 	}
-
+	
 	stages {
-	    stage('Checkout') {
-	        steps {
-	            git url: 'https://github.com/RishiMishra2005/AirlineManagementSystem.git', branch: 'main'
-	        }
-	    }
-	
-	    stage('Build with Docker') {
-		    steps {
-		        script {
-		            def ws = pwd()
-		            echo "Original ws path: ${ws}"
-		            
-		            def wsLinux = ws
-		            
-		            if (!isUnix()) {
-		                // Normalize path: replace backslashes with forward slashes
-		                wsLinux = ws.replaceAll('\\\\', '/')
-		                
-		                // Replace drive letter like C:/ -> /c/
-		                wsLinux = wsLinux.replaceFirst(/^([A-Za-z]):/, { fullMatch, driveLetter -> 
-		                    "/" + driveLetter.toLowerCase()
-		                })
-		            }
-		            
-		            echo "Converted wsLinux path: ${wsLinux}"
-		            
-		            docker.image("${IMAGE_NAME}").inside("-v ${ws}:${wsLinux} -w ${wsLinux}") {
-		                sh 'mvn clean package'
-		            }
-		        }
-		    }
+		stage('Checkout Code') {
+			steps {
+				checkout scm
+			}
 		}
-
-
 	
-	    stage('Test') {
-	        steps {
-	            script {
-	                def ws = pwd()
-	                docker.image("${IMAGE_NAME}").inside("-v ${ws}:${ws} -w ${ws}") {
-	                    sh 'mvn test'
-	                }
-	            }
-	        }
-	    }
-	
-	    stage('Deploy to EC2') {
-	        steps {
-	            script {
-	                def jarFile = sh(script: "ls target/*.jar", returnStdout: true).trim()
-	                sh """
-	                    chmod 400 ${PEM_KEY}
-	                    scp -o StrictHostKeyChecking=no -i ${PEM_KEY} ${jarFile} ${EC2_USER}@${EC2_IP}:/home/${EC2_USER}/app.jar
-	                    ssh -o StrictHostKeyChecking=no -i ${PEM_KEY} ${EC2_USER}@${EC2_IP} '
-	                        pkill -f app.jar || true
-	                        nohup java -jar /home/${EC2_USER}/app.jar > /home/${EC2_USER}/springboot.log 2>&1 &
-	                    '
+		stage('Build') {
+	            steps {
+	                bat """
+	                docker run -v "%CD%":/workspace maven:3.9.9-eclipse-temurin-21 /bin/sh -c "cd /workspace && mvn clean package"
 	                """
 	            }
 	        }
-	    }
+
+	        stage('Test') {
+	            steps {
+	                bat """
+	                docker run -v "%CD%":/workspace maven:3.9.9-eclipse-temurin-21 /bin/sh -c "cd /workspace && mvn test"
+	                """
+	            }
+	        }
+	
+	    	stage('Copy JAR to EC2') {
+			steps {
+		  		withCredentials([file(credentialsId: 'ec2-key', variable: 'EC2_KEY')]) {
+			    	sh '''
+			      	chmod 400 ${EC2_KEY}
+			        scp -o StrictHostKeyChecking=no -i ${EC2_KEY} ${JAR_NAME} ${EC2_HOST}:${REMOTE_PATH}
+			      	'''
+			    	}
+		  	}
+		}
 	}
 
 	post {
