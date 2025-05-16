@@ -16,24 +16,31 @@ pipeline {
 	
 	    stage('Build with Docker') {
 		    steps {
-			script {
-			    def ws = pwd()
-			    // Convert Windows drive letter path to Unix style
-			    if (isUnix()) {
-				// on Linux or WSL, pwd() is already correct
-				docker.image("${IMAGE_NAME}").inside("-v ${ws}:${ws} -w ${ws}") {
-				    sh 'mvn clean package'
-				}
-			    } else {
-				// On Windows: Convert C:\... to /c/...
-				def wsLinux = ws.replaceAll('^([a-zA-Z]):\\\\', '/$1/').replaceAll('\\\\', '/').toLowerCase()
-				docker.image("${IMAGE_NAME}").inside("-v ${ws}:${wsLinux} -w ${wsLinux}") {
-				    sh 'mvn clean package'
-				}
-			    }
-			}
+		        script {
+		            def ws = pwd()
+		            echo "Original ws path: ${ws}"
+		            
+		            def wsLinux = ws
+		            
+		            if (!isUnix()) {
+		                // Normalize path: replace backslashes with forward slashes
+		                wsLinux = ws.replaceAll('\\\\', '/')
+		                
+		                // Replace drive letter like C:/ -> /c/
+		                wsLinux = wsLinux.replaceFirst(/^([A-Za-z]):/, { fullMatch, driveLetter -> 
+		                    "/" + driveLetter.toLowerCase()
+		                })
+		            }
+		            
+		            echo "Converted wsLinux path: ${wsLinux}"
+		            
+		            docker.image("${IMAGE_NAME}").inside("-v ${ws}:${wsLinux} -w ${wsLinux}") {
+		                sh 'mvn clean package'
+		            }
+		        }
 		    }
 		}
+
 
 	
 	    stage('Test') {
