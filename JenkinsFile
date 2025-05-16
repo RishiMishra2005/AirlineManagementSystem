@@ -1,62 +1,64 @@
 pipeline {
-	agent {
-		docker {
-			image 'eclipse-temurin:21-jdk'
-			args '-v $HOME/.m2:/root/.m2'
-		}
-	}
-	
+	agent any
 	environment {
-		EC2_HOST = 'ec2-user@65.1.248.245'
-		JAR_NAME = 'target/airline-0.0.1-SNAPSHOT.jar'
-		REMOTE_PATH = '/home/ec2-user/app.jar'
+	    IMAGE_NAME = 'eclipse-temurin:21-jdk'
+	    EC2_USER = 'ec2-user'                // Amazon Linux default user
+	    EC2_IP = '65.1.248.245'        // Replace this
+	    PEM_KEY = 'C:/Users/ADMIN/Downloads/rishi.pem'    // Replace this (local path to your EC2 private key)
 	}
-	
+
 	stages {
-		stage('Checkout Code') {
-			steps {
-				checkout scm
-			}
-		}
+	    stage('Checkout') {
+	        steps {
+	            git url: 'https://github.com/RishiMishra2005/AirlineManagementSystem.git', branch: 'main'
+	        }
+	    }
 	
-		stage('Build & Test') {
-			steps {
-				sh 'mvn clean package -DskipTests=false'
-			}
-		}
+	    stage('Build with Docker') {
+	        steps {
+	            script {
+	                def ws = pwd()
+	                docker.image("${IMAGE_NAME}").inside("-v ${ws}:${ws} -w ${ws}") {
+	                    sh 'mvn clean package'
+	                }
+	            }
+	        }
+	    }
 	
-		stage('Copy JAR to EC2') {
-			steps {
-		  		withCredentials([file(credentialsId: 'ec2-key', variable: 'EC2_KEY')]) {
-		    	sh '''
-		      	chmod 400 ${EC2_KEY}
-		        scp -o StrictHostKeyChecking=no -i ${EC2_KEY} ${JAR_NAME} ${EC2_HOST}:${REMOTE_PATH}
-		      	'''
-		    	}
-		  	}
-		}
+	    stage('Test') {
+	        steps {
+	            script {
+	                def ws = pwd()
+	                docker.image("${IMAGE_NAME}").inside("-v ${ws}:${ws} -w ${ws}") {
+	                    sh 'mvn test'
+	                }
+	            }
+	        }
+	    }
 	
-		stage('Run JAR on EC2') {
-			steps {
-	  			withCredentials([file(credentialsId: 'ec2-key', variable: 'EC2_KEY')]) {
-			    sh '''
-		        ssh -o StrictHostKeyChecking=no -i ${EC2_KEY} ${EC2_HOST} << EOF
-		          pkill -f 'java.*app.jar' || true
-		          nohup java -jar ${REMOTE_PATH} > app.log 2>&1 &
-		        EOF
-		      	'''
-		    	}
-		  	}
-		}
-	
+	    stage('Deploy to EC2') {
+	        steps {
+	            script {
+	                def jarFile = sh(script: "ls target/*.jar", returnStdout: true).trim()
+	                sh """
+	                    chmod 400 ${PEM_KEY}
+	                    scp -o StrictHostKeyChecking=no -i ${PEM_KEY} ${jarFile} ${EC2_USER}@${EC2_IP}:/home/${EC2_USER}/app.jar
+	                    ssh -o StrictHostKeyChecking=no -i ${PEM_KEY} ${EC2_USER}@${EC2_IP} '
+	                        pkill -f app.jar || true
+	                        nohup java -jar /home/${EC2_USER}/app.jar > /home/${EC2_USER}/springboot.log 2>&1 &
+	                    '
+	                """
+	            }
+	        }
+	    }
 	}
 
 	post {
-		success {
-			echo 'Deployment complete. App running on EC2.'
-		}
-		failure {
-			echo 'Deployment failed.'
-		}
+	    success {
+	        echo 'Deployment successful!'
+	    }
+	    failure {
+	        echo 'Deployment failed.'
+	    }
 	}
 }
