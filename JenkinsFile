@@ -1,7 +1,7 @@
 pipeline {
 	agent any
 	environment {
-		EC2_HOST = 'ec2-user@65.1.248.245'
+		EC2_HOST = 'ec2-user@65.0.176.136'
 		JAR_NAME = 'target/airline-0.0.1-SNAPSHOT.jar'
 		REMOTE_PATH = '/home/ec2-user/app.jar'
 	}
